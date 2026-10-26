@@ -1,0 +1,51 @@
+{% extends "admin/base.html" %}{% block body %}
+<div x-data="sh()" x-init="init()" class="space-y-2">
+ <div class="flex flex-wrap gap-2 text-sm items-center">
+  <input x-model="f.q" @input.debounce.300ms="go(1)" placeholder="Поиск" class="border rounded px-2 py-1">
+  <select x-model="f.tab" @change="go(1)" class="border rounded py-1"><option value="all">Все</option><option value="in_transit">В пути</option><option value="planned">Планируется</option><option value="delivered">Завершено</option><option value="overdue">Просрочено</option><option value="nogps">Без GPS</option></select>
+  <select x-model="f.size" @change="go(1)" class="border rounded py-1"><option>50</option><option>100</option><option>200</option></select>
+  <label><input type="checkbox" x-model="f.deleted" @change="go(1)"> удалённые</label>
+  <a :href="csv()" class="text-blue-600">CSV</a>
+  <button class="px-2 py-1 bg-blue-600 text-white rounded" @click="form=!form">+ Создать заказ</button></div>
+ <p class="text-red-600 text-sm" x-text="err"></p>
+ <form x-show="form" x-cloak @submit.prevent="create()" class="bg-white border rounded p-3 grid sm:grid-cols-3 gap-2 text-sm">
+  <template x-for="[k,l,t,li] in fields"><label class="block"><span class="text-xs text-slate-500" x-text="l"></span>
+   <input class="border rounded px-2 py-1 w-full" :type="t" :list="li" x-model="n[k]" :required="k=='order_id'" :pattern="k=='gps_link'?'https?://.*':null"></label></template>
+  <label class="block"><span class="text-xs text-slate-500">Статус</span><select x-model="n.status" class="border rounded px-2 py-1 w-full"><option value="planned">planned</option><option value="in_transit">in_transit</option><option value="delivered">delivered</option></select></label>
+  <button class="bg-green-600 text-white rounded px-3 py-1 self-end">Сохранить</button></form>
+ <datalist id="dl-carrier"><template x-for="o in opt.carrier"><option :value="o"></option></template></datalist>
+ <datalist id="dl-vehicle"><template x-for="o in opt.vehicle"><option :value="o"></option></template></datalist>
+ <datalist id="dl-driver"><template x-for="o in opt.driver"><option :value="o"></option></template></datalist>
+ <div x-show="sel.length" x-cloak class="bg-amber-50 border rounded p-2 text-sm flex flex-wrap gap-2 items-center">Выбрано: <b x-text="sel.length"></b>
+  <select x-model="bulk" class="border rounded py-1"><option value="">статус…</option><option value="planned">planned</option><option value="in_transit">in_transit</option><option value="delivered">delivered</option></select>
+  <button class="px-2 border rounded" @click="doBulk(bulk)" :disabled="!bulk">Применить</button>
+  <button class="px-2 border rounded" @click="doBulk('delivered')">Пометить завершёнными</button>
+  <button class="px-2 border rounded text-red-600" @click="delSel()">Удалить</button></div>
+ <div class="overflow-x-auto bg-white border rounded"><table class="w-full text-xs"><thead class="bg-slate-100 text-left"><tr><th class="p-1"></th><th>Заказ</th><th>Напр.</th><th>Адрес</th><th>Прибытие</th><th>Перевозчик</th><th>Статус*</th><th>Комментарий*</th><th>GPS*</th><th></th></tr></thead>
+  <template x-for="s in rows" :key="s.order_id"><tr class="border-t align-top">
+   <td class="p-1"><input type="checkbox" :value="s.order_id" x-model="sel"></td><td class="font-semibold" x-text="s.order_id"></td><td x-text="s.direction"></td><td x-text="s.address"></td>
+   <td :class="s.overdue&&'text-red-600'" x-text="s.plan_arrival||'—'"></td><td x-text="s.carrier"></td>
+   <template x-for="c in ['status','comment','gps_link']"><td class="max-w-[10rem] truncate cursor-text" @dblclick="edit={id:s.order_id,f:c,v:s[c]||''}" :title="s[c]">
+    <template x-if="edit&&edit.id==s.order_id&&edit.f==c"><span>
+     <select x-show="c=='status'" x-model="edit.v" @change="save(s)" class="border"><option>planned</option><option>in_transit</option><option>delivered</option></select>
+     <input x-show="c!='status'" x-model="edit.v" @keydown.enter="save(s)" @keydown.escape="edit=null" @vue:mounted="$el.focus()" class="border w-40"></span></template>
+    <span x-show="!(edit&&edit.id==s.order_id&&edit.f==c)" x-text="s[c]||'—'"></span></td></template>
+   <td class="whitespace-nowrap"><button x-show="!s.deleted_at" class="text-red-600" @click="del(s.order_id)">Удалить</button><button x-show="s.deleted_at" class="text-green-700" @click="restore(s.order_id)">Восстановить</button></td></tr></template></table></div>
+ <div class="flex gap-3 items-center text-sm"><button class="border px-2 rounded" :disabled="page<=1" @click="go(page-1)">←</button>
+  <span x-text="'Стр. '+page+' из '+Math.max(1,Math.ceil(total/f.size))+' · всего '+total"></span><button class="border px-2 rounded" :disabled="page*f.size>=total" @click="go(page+1)">→</button></div>
+ <p class="text-xs text-slate-400">* двойной клик — правка, Enter — сохранить, Esc — отмена</p></div>
+{% endblock %}{% block script %}<script>function sh(){return{rows:[],total:0,page:1,sel:[],bulk:'',edit:null,err:'',form:false,opt:{carrier:[],vehicle:[],driver:[]},
+ f:{q:'',tab:'all',size:50,deleted:false},n:{status:'planned'},
+ fields:[['order_id','Заказ *','text'],['direction','Направление','text'],['address','Адрес','text'],['weight','Вес','number'],['ship_date','Дата отгрузки','date'],['plan_arrival','Дата прибытия','date'],['carrier','Перевозчик','text','dl-carrier'],['vehicle_raw','Машина','text','dl-vehicle'],['driver_raw','Водитель','text','dl-driver'],['gps_link','GPS-ссылка','url'],['comment','Комментарий','text'],['notes','Примечания','text'],['rate','Ставка','number'],['rate_plan','Ставка план','number'],['termologer','Термологер','text'],['vehicle_type','Тип ТС','text']],
+ async init(){this.f.tab=new URLSearchParams(location.search).get('tab')||'all';try{this.opt=await api('GET','/admin/api/options')}catch(e){}await this.go(1)},
+ qs(){return new URLSearchParams({q:this.f.q,tab:this.f.tab,size:this.f.size,deleted:this.f.deleted?1:0})},
+ csv(){return '/api/shipments.csv?'+new URLSearchParams({q:this.f.q,tab:this.f.tab})},
+ async go(p){this.page=p;this.sel=[];this.err='';try{const d=await api('GET','/admin/api/shipments?page='+p+'&'+this.qs());this.rows=d.rows;this.total=d.total}catch(e){this.err=e.message}},
+ async save(s){const e=this.edit;this.edit=null;if(e.f=='gps_link'&&e.v&&!/^https?:\/\//.test(e.v)){this.err='GPS-ссылка должна начинаться с http';return}
+  try{await api('POST','/admin/shipments',{order_id:e.id,[e.f]:e.v});await this.go(this.page)}catch(x){this.err=x.message}},
+ async create(){const b={_create:true};for(const [k,v] of Object.entries(this.n))if(v!==''&&v!=null)b[k]=v;
+  try{await api('POST','/admin/shipments',b);this.n={status:'planned'};this.form=false;await this.go(1)}catch(x){this.err=x.message}},
+ async doBulk(st){try{await api('POST','/admin/shipments/bulk',{order_ids:this.sel,status:st});await this.go(this.page)}catch(x){this.err=x.message}},
+ async delSel(){if(!confirm('Удалить '+this.sel.length+' заказов?'))return;for(const id of this.sel)await this.del(id,true);await this.go(this.page)},
+ async del(id,q){try{await api('DELETE','/admin/shipments/'+encodeURIComponent(id));if(!q)await this.go(this.page)}catch(x){this.err=x.message}},
+ async restore(id){try{await api('DELETE','/admin/shipments/'+encodeURIComponent(id)+'?restore=true');await this.go(this.page)}catch(x){this.err=x.message}}}}</script>{% endblock %}

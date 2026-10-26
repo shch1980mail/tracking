@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}{% block body %}
+<div x-data="dash()" x-init="load()" class="space-y-4">
+ <p class="text-red-600 text-sm" x-text="err"></p>
+ <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+  <template x-for="[k,l,u] in labels"><a :href="u.replace('K',k)" class="bg-white border rounded p-3 block"><div class="text-2xl font-bold" x-text="d.counts?d.counts[k]:'…'"></div><div class="text-xs text-slate-500" x-text="l"></div></a></template></div>
+ <div class="bg-white border rounded p-3 flex flex-wrap gap-3 items-center text-sm">
+  <span>Точек GPS за 24 ч: <b x-text="d.gps_24h"></b></span>
+  <button class="px-3 py-1 bg-blue-600 text-white rounded" @click="run()" :disabled="busy">Запустить парсер сейчас</button><span x-text="msg"></span></div>
+ <div class="grid md:grid-cols-2 gap-3">
+  <div class="bg-white border rounded p-3"><b>Сломанные ссылки (топ-5)</b>
+   <template x-for="l in d.broken"><div class="text-xs border-t py-1"><b x-text="l.order_id"></b> · ошибок <span x-text="l.error_count"></span> · <span x-text="l.last_error"></span></div></template></div>
+  <div class="bg-white border rounded p-3"><b>Последние импорты</b>
+   <template x-for="b in d.imports"><div class="text-xs border-t py-1" x-text="'#'+b.id+' '+b.sheet_name+' · +'+b.inserted+' ~'+b.updated+' ['+b.status+'] '+fmt(b.uploaded_at)"></div></template></div></div></div>
+{% endblock %}{% block script %}<script>function dash(){return{d:{},err:'',msg:'',busy:false,
+ labels:[['in_transit','В пути','/admin/shipments?tab=K'],['planned','Планируется','/admin/shipments?tab=K'],['delivered','Завершено','/admin/shipments?tab=K'],['overdue','Просрочено','/admin/shipments?tab=K'],['nogps','Без GPS','/admin/shipments?tab=K'],['link_invalid','Битые ссылки','/admin/gps-links?state=broken']],
+ async load(){try{this.d=await api('GET','/admin/api/dashboard')}catch(e){this.err=e.message}},
+ async run(){this.busy=true;try{const r=await api('POST','/admin/gps/run-all');this.msg='Обработано '+r.processed+', успешно '+r.success;await this.load()}catch(e){this.msg=e.message}this.busy=false}}}</script>{% endblock %}

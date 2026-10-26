@@ -1,0 +1,51 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Импорт Excel — ТПК</title><script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script></head>
+<body class="bg-slate-50 text-slate-900" x-data="imp()" x-init="hist()">
+<div class="max-w-5xl mx-auto p-3 space-y-4">
+ <div class="flex justify-between items-center"><h1 class="text-xl font-bold">Импорт Excel</h1><span class="text-sm"><a href="/admin" class="text-blue-600">← админка</a> · <a href="/" class="text-blue-600">сайт</a></span></div>
+ <label @dragover.prevent @drop.prevent="pick($event.dataTransfer.files[0])" class="block border-2 border-dashed rounded-lg p-6 text-center bg-white">
+  Перетащите .xlsx сюда или <input type="file" accept=".xlsx" @change="pick($event.target.files[0])" class="block mx-auto mt-2 text-sm"></label>
+ <p x-show="busy" class="text-slate-500">Обработка…</p><p class="text-red-600" x-text="err"></p>
+ <section x-show="sheets.length" class="space-y-2">
+  <template x-for="s in sheets" :key="s.name"><div class="bg-white border rounded p-3">
+   <label class="font-semibold"><input type="checkbox" x-model="s.on"> <span x-text="s.name"></span></label>
+   <details class="mt-2 text-sm"><summary class="cursor-pointer text-blue-600">Предпросмотр и маппинг</summary>
+    <div class="overflow-x-auto mt-2"><table class="text-xs border"><tr><template x-for="h in s.headers"><th class="border px-1" x-text="h"></th></template></tr>
+     <template x-for="r in s.rows"><tr><template x-for="c in r"><td class="border px-1 whitespace-nowrap" x-text="c"></td></template></tr></template></table></div>
+    <p x-show="s.fixed_mapping" class="text-xs text-slate-500 mt-2">Маппинг основного листа фиксирован (по позиции колонок).</p>
+    <div class="grid sm:grid-cols-2 gap-1 mt-2"><template x-for="h in s.headers.filter(Boolean)" :key="h">
+     <div class="flex gap-2 items-center"><span class="w-1/2 truncate text-xs" x-text="h"></span>
+      <select class="border rounded text-xs flex-1" :disabled="s.fixed_mapping" x-model="maps[s.name][k(h)]">
+       <option value="">— пропустить —</option><template x-for="f in s.fields"><option :value="f" x-text="f"></option></template></select></div></template></div>
+    <button x-show="!s.fixed_mapping" class="mt-2 px-2 py-1 border rounded text-xs" @click="saveMap(s)">Сохранить маппинг</button>
+   </details></div></template>
+  <p class="text-xs text-slate-400" x-show="ignored.length" x-text="'Игнорируются: '+ignored.join(', ')"></p>
+  <button class="px-4 py-2 rounded bg-blue-600 text-white" @click="commit()" :disabled="busy">Импортировать</button></section>
+ <section x-show="res" class="bg-white border rounded p-3 text-sm"><b>Результат</b>
+  <template x-for="b in (res?res.batches:[])"><div class="mt-1"><span x-text="b.sheet_name+': +'+b.inserted+' / ~'+b.updated+' / ошибок '+b.errors.length+' ['+b.status+']'"></span>
+   <details x-show="b.errors.length"><summary class="text-red-600 cursor-pointer">ошибки</summary><ul class="text-xs list-disc ml-5"><template x-for="e in b.errors"><li x-text="e"></li></template></ul></details></div></template></section>
+ <section class="bg-white border rounded p-3 overflow-x-auto"><b>История</b>
+  <table class="w-full text-xs mt-2"><template x-for="b in history" :key="b.id"><tr class="border-t">
+   <td class="py-1" x-text="'#'+b.id"></td><td x-text="b.sheet_name"></td><td x-text="b.filename"></td><td x-text="b.uploaded_at.slice(0,16).replace('T',' ')"></td>
+   <td x-text="'+'+b.inserted+' ~'+b.updated+' !'+b.errors_count"></td><td x-text="b.status"></td>
+   <td><button x-show="b.status!='rolled_back'" class="text-red-600" @click="rb(b.id)">Откатить</button></td></tr></template></table></section>
+</div>
+<script>function imp(){return{file:null,sheets:[],ignored:[],maps:{},res:null,history:[],busy:false,err:'',
+ k(h){return h.trim().toLowerCase()},
+ async pick(f){if(!f)return;this.file=f;this.err='';this.res=null;this.busy=true;const fd=new FormData();fd.append('file',f);
+  const r=await fetch('/admin/import/preview',{method:'POST',body:fd});this.busy=false;
+  if(!r.ok){this.err=(await r.json()).detail||'Ошибка';return}
+  const d=await r.json();this.ignored=d.ignored;this.maps={};
+  this.sheets=d.sheets.map(s=>{this.maps[s.name]={...(s.mapping_saved||s.mapping_default)};return{...s,on:true}})},
+ clean(name){const o={};for(const [h,f] of Object.entries(this.maps[name]))if(f)o[h]=f;return o},
+ async saveMap(s){const r=await fetch('/admin/import/mapping/'+encodeURIComponent(s.name),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(this.clean(s.name))});
+  this.err=r.ok?'':(await r.json()).detail},
+ async commit(){const on=this.sheets.filter(s=>s.on);if(!on.length)return;this.busy=true;this.err='';
+  const fd=new FormData();fd.append('file',this.file);fd.append('sheet_names',JSON.stringify(on.map(s=>s.name)));
+  const m={};on.filter(s=>!s.fixed_mapping).forEach(s=>m[s.name]=this.clean(s.name));fd.append('mapping',JSON.stringify(m));
+  const r=await fetch('/admin/import/commit',{method:'POST',body:fd});this.busy=false;
+  if(!r.ok){this.err=(await r.json()).detail;return}this.res=await r.json();this.hist()},
+ async hist(){const r=await fetch('/admin/import/history');this.history=r.ok?await r.json():[]},
+ async rb(id){if(!confirm('Откатить батч #'+id+'?'))return;const r=await fetch('/admin/import/'+id+'/rollback',{method:'POST'});
+  const d=await r.json();this.err=r.ok?'':d.detail;if(r.ok)alert('Восстановлено: '+d.restored+', удалено: '+d.removed+', оставлено (правились позже): '+d.kept);this.hist()}}}</script></body></html>

@@ -1,0 +1,15 @@
+{% extends "admin/base.html" %}{% block body %}
+<div x-data="st()" x-init="load()" class="space-y-3"><p class="text-sm" :class="ok?'text-green-700':'text-red-600'" x-text="msg"></p>
+ <form @submit.prevent="save()" class="bg-white border rounded p-3 space-y-2 text-sm"><b>Приложение</b>
+  <label class="block">Интервал GPS-парсера, мин <input type="number" min="1" max="1440" x-model.number="s.gps_interval_minutes" class="border rounded px-2 py-1 w-24"> <span class="text-xs text-slate-400">применяется после перезапуска</span></label>
+  <label class="block"><input type="checkbox" x-model="s.public_access"> Публичный доступ (PUBLIC_ACCESS)</label>
+  <label class="block"><input type="checkbox" x-model="s.rate_limit_enabled"> Rate-limit</label>
+  <button class="px-3 py-1 bg-blue-600 text-white rounded">Сохранить</button></form>
+ <div class="bg-white border rounded p-3 text-sm overflow-x-auto"><b>Маппинги Excel</b>
+  <template x-for="(m,name) in s.mappings" :key="name"><div class="border-t mt-2 pt-2"><b x-text="name"></b>
+   <span x-show="!m" class="text-slate-400"> — по умолчанию</span>
+   <template x-if="m"><span><button class="text-red-600 ml-2" @click="reset(name)">Сбросить</button><pre class="text-xs" x-text="JSON.stringify(m)"></pre></span></template></div></template></div></div>
+{% endblock %}{% block script %}<script>function st(){return{s:{mappings:{}},msg:'',ok:true,
+ async load(){try{this.s=await api('GET','/admin/api/settings')}catch(e){this.msg=e.message;this.ok=false}},
+ async save(){try{await api('POST','/admin/settings',{gps_interval_minutes:this.s.gps_interval_minutes,public_access:this.s.public_access,rate_limit_enabled:this.s.rate_limit_enabled});this.msg='Сохранено';this.ok=true}catch(e){this.msg=e.message;this.ok=false}},
+ async reset(n){if(!confirm('Сбросить маппинг «'+n+'»?'))return;await api('DELETE','/admin/import/mapping/'+encodeURIComponent(n));await this.load()}}}</script>{% endblock %}

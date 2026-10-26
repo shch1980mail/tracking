@@ -1,0 +1,55 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ТПК — Отслеживание</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"><link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"><script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script><style>[x-cloak]{display:none!important}</style></head>
+<body class="bg-slate-50 text-slate-900" x-data="app()" x-init="load(); setInterval(load,60000)">
+<header class="sticky top-0 bg-white border-b p-3 flex flex-wrap gap-2 items-center">
+ <b>ТПК — Отслеживание</b>
+ <input x-model.debounce.200ms="q" @input.debounce.200ms="load()" placeholder="Поиск: заказ, адрес, перевозчик…" class="border rounded px-2 py-1 flex-1 min-w-[180px]">
+ <button @click="toggleMap()" class="text-sm text-blue-600">Карта</button> <a :href="`/api/shipments.csv?tab=${tab}&q=${encodeURIComponent(q)}`" class="text-sm text-blue-600">CSV</a> <a href="/admin/import" class="text-sm text-blue-600">Импорт</a> <a href="/docs" class="text-sm text-blue-600">API</a></header>
+<div x-show="showMap" x-cloak class="relative" :class="full?'fixed inset-0 z-[1500] bg-white':''"><button class="absolute top-2 right-2 z-[1600] bg-white border rounded px-2 py-1 text-sm shadow" @click="full=!full;$nextTick(()=>_gm&&_gm.invalidateSize())" x-text="full?'Закрыть':'На весь экран'"></button><div id="mainmap" class="w-full z-0" :class="full?'h-full':'h-[60vh] sm:h-80'"></div></div>
+<nav class="flex gap-2 p-3 overflow-x-auto">
+ <template x-for="[k,l] in tabs"><button @click="tab=k;load()" class="px-3 py-1 rounded-full border whitespace-nowrap"
+  :class="tab==k?'bg-blue-600 text-white':'bg-white'" x-text="l"></button></template></nav>
+<main class="p-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+ <p x-show="!rows.length&&!loading" class="text-slate-500">Ничего не найдено</p>
+ <template x-for="s in rows" :key="s.order_id"><article class="bg-white rounded-lg border p-3">
+  <div class="flex justify-between"><b x-text="s.order_id"></b>
+   <span class="text-xs px-2 rounded" :class="{'bg-green-100':s.status=='delivered','bg-amber-100':s.status=='in_transit','bg-slate-100':s.status=='planned'}" x-text="label[s.status]"></span></div>
+  <div class="text-sm" x-text="(s.direction||'')+' · '+(s.address||'')"></div>
+  <div class="text-sm text-slate-600" x-text="(s.carrier||'')+' · '+(s.vehicle_raw||'')"></div>
+  <div class="text-sm"><span x-text="s.driver_fio"></span> <a class="text-blue-600" x-show="s.driver_phone" :href="'tel:'+s.driver_phone" x-text="s.driver_phone"></a></div>
+  <div class="text-sm" :class="s.overdue&&'text-red-600 font-semibold'" x-text="'Прибытие: '+(s.plan_arrival||'—')+(s.overdue?' (просрочено)':'')"></div>
+  <div class="text-xs text-slate-500 truncate" x-text="s.comment"></div>
+  <div class="mt-2 flex gap-3 text-sm"><a x-show="s.gps_link" :href="s.gps_link" target="_blank" class="text-blue-600">GPS</a>
+   <button @click="navigator.clipboard.writeText(s.order_id)">Скопировать №</button> <button class="text-blue-600" @click="openTrack(s)">Трек</button></div>
+ </article></template></main>
+<div x-show="sel" x-cloak class="fixed inset-0 bg-black/50 z-[2000] flex items-end sm:items-center justify-center" @keydown.escape.window="sel=null">
+ <div class="bg-white rounded-lg w-full max-w-2xl p-3 space-y-2" @click.outside="sel=null">
+  <div class="flex justify-between"><b x-text="sel&&sel.order_id"></b><button @click="sel=null">✕</button></div>
+  <div class="flex gap-2 text-sm items-center">
+   <template x-for="h in [24,72,0]"><button class="px-2 border rounded" :class="hours==h&&'bg-blue-600 text-white'" @click="hours=h;drawTrack()" x-text="h?h+' ч':'Всё'"></button></template>
+   <button x-show="canRefresh" class="ml-auto px-2 border rounded" @click="refreshGps()">Обновить GPS</button></div>
+  <div id="trackmap" style="height:320px" class="rounded"></div>
+  <p class="text-xs text-slate-500" x-text="'Точек: '+pts.length"></p></div></div>
+<script>let _map=null,_layer=null,_gm=null,_gc=null;const esc=t=>String(t||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));function app(){return{q:'',tab:'all',rows:[],loading:true,
+ tabs:[['all','Все'],['in_transit','В пути'],['planned','Планируется'],['delivered','Завершено'],['overdue','Просрочено'],['nogps','Без GPS']],
+ label:{in_transit:'В пути',planned:'В плане',delivered:'Завершено'},
+ sel:null,hours:24,pts:[],canRefresh:true,
+ async openTrack(s){this.sel=s;await this.$nextTick();await this.drawTrack()},
+ async drawTrack(){const r=await fetch(`/api/gps/positions/${encodeURIComponent(this.sel.order_id)}?hours=${this.hours}`);
+  const pts=r.ok?await r.json():[];this.pts=pts;
+  if(!_map){_map=L.map('trackmap');L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(_map)}
+  if(_layer)_layer.remove();_layer=L.layerGroup().addTo(_map);_map.invalidateSize();
+  const ll=pts.map(p=>[p.lat,p.lng]);
+  if(ll.length){L.polyline(ll).addTo(_layer);L.marker(ll[ll.length-1]).addTo(_layer);_map.fitBounds(ll,{maxZoom:14})}else _map.setView([54.7,20.5],5)},
+ async refreshGps(){const r=await fetch(`/admin/gps/run-now?order_id=${encodeURIComponent(this.sel.order_id)}`,{method:'POST'});
+  if(r.status==401||r.status==403){this.canRefresh=false;return}await this.drawTrack();await this.load()},
+ showMap:false,full:false,
+ toggleMap(){this.showMap=!this.showMap;if(this.showMap)this.$nextTick(()=>this.drawMap())},
+ drawMap(){if(!_gm){_gm=L.map('mainmap');L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(_gm);_gc=L.markerClusterGroup().addTo(_gm)}
+  _gc.clearLayers();const ps=this.rows.filter(s=>s.current_lat!=null);
+  ps.forEach(s=>L.marker([s.current_lat,s.current_lng]).bindPopup('<b>'+esc(s.order_id)+'</b><br>'+esc(s.address)).addTo(_gc));
+  _gm.invalidateSize();ps.length?_gm.fitBounds(_gc.getBounds(),{maxZoom:10}):_gm.setView([54.7,20.5],4)},
+ async load(){this.loading=true;const r=await fetch(`/api/shipments?q=${encodeURIComponent(this.q)}&tab=${this.tab}`);
+  this.rows=r.ok?await r.json():[];this.loading=false;if(this.showMap)this.drawMap()}}}</script></body></html>

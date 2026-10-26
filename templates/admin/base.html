@@ -1,0 +1,19 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ТПК — админка</title><script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style>[x-cloak]{display:none!important}</style></head>
+<body class="bg-slate-50 text-slate-900">
+<header class="bg-white border-b px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 items-center text-sm sticky top-0 z-10">
+ <b>ТПК</b>
+ {% for href, label in [('/admin','Дашборд'),('/admin/shipments','Заказы'),('/admin/import','Импорт'),('/admin/gps-links','GPS-ссылки'),('/admin/users','Пользователи'),('/admin/settings','Настройки'),('/admin/audit','Аудит')] %}
+ {% if not (href == '/admin/users' or href == '/admin/audit') or request.state.role == 'admin' %}
+ <a href="{{ href }}" class="{{ 'font-bold' if request.url.path == href else 'text-blue-600' }}">{{ label }}</a>{% endif %}{% endfor %}
+ <a href="/" class="text-blue-600">Сайт</a>
+ <span class="ml-auto text-slate-500">{{ request.state.user }} ({{ request.state.role }})</span><a href="/admin/logout" class="text-red-600">Выйти</a></header>
+<main class="p-3 max-w-6xl mx-auto">{% block body %}{% endblock %}</main>
+<script>
+async function api(m,u,b,retry=true){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});
+ if(r.status===401&&retry){const t=await fetch('/admin/refresh',{method:'POST'});if(t.ok)return api(m,u,b,false);location.href='/admin/login'}
+ const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:'Ошибка '+r.status);return d}
+const fmt=t=>t?String(t).slice(0,16).replace('T',' '):'—';
+</script>{% block script %}{% endblock %}</body></html>

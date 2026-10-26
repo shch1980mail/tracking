@@ -1,0 +1,14 @@
+{% extends "admin/base.html" %}{% block body %}
+<div x-data="us()" x-init="load()" class="space-y-2"><p class="text-red-600 text-sm" x-text="err"></p>
+ <form @submit.prevent="add()" class="bg-white border rounded p-3 flex flex-wrap gap-2 text-sm"><input x-model="n.login" placeholder="Логин" required class="border rounded px-2 py-1"><input x-model="n.password" type="password" placeholder="Пароль ≥6" required minlength="6" class="border rounded px-2 py-1">
+  <select x-model="n.role" class="border rounded py-1"><option>viewer</option><option>manager</option><option>admin</option></select><button class="px-3 py-1 bg-blue-600 text-white rounded">Создать</button></form>
+ <div class="overflow-x-auto bg-white border rounded"><table class="w-full text-sm"><thead class="bg-slate-100 text-left"><tr><th class="p-1">Логин</th><th>Роль</th><th>Активен</th><th>Создан</th><th></th></tr></thead>
+ <template x-for="u in rows" :key="u.id"><tr class="border-t"><td class="p-1" x-text="u.login"></td>
+  <td><select :value="u.role" @change="patch(u,{role:$event.target.value})" class="border rounded"><option>viewer</option><option>manager</option><option>admin</option></select></td>
+  <td><input type="checkbox" :checked="u.is_active" @change="patch(u,{is_active:$event.target.checked})"></td><td x-text="fmt(u.created_at)"></td>
+  <td><button class="text-blue-600" @click="reset(u)">Сбросить пароль</button></td></tr></template></table></div></div>
+{% endblock %}{% block script %}<script>function us(){return{rows:[],err:'',n:{login:'',password:'',role:'viewer'},
+ async load(){try{this.rows=await api('GET','/admin/users')}catch(e){this.err=e.message}},
+ async add(){try{await api('POST','/admin/users',this.n);this.n={login:'',password:'',role:'viewer'};this.err='';await this.load()}catch(e){this.err=e.message}},
+ async patch(u,b){try{await api('PATCH','/admin/users/'+u.id,b);this.err=''}catch(e){this.err=e.message}await this.load()},
+ async reset(u){const p=prompt('Новый пароль для '+u.login+' (≥6)');if(p)await this.patch(u,{password:p})}}}</script>{% endblock %}

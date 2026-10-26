@@ -1,0 +1,14 @@
+{% extends "admin/base.html" %}{% block body %}
+<div x-data="gl()" x-init="init()" class="space-y-2">
+ <div class="flex flex-wrap gap-2 text-sm items-center"><select x-model="state" @change="load()" class="border rounded py-1"><option value="all">Все</option><option value="broken">Сломаны</option><option value="unchecked">Не проверялись</option></select>
+  <form @submit.prevent="bind()" class="flex flex-wrap gap-2"><input x-model="b.order_id" placeholder="Заказ" required class="border rounded px-2 py-1"><input x-model="b.url" placeholder="https://…" required pattern="https?://.*" class="border rounded px-2 py-1"><button class="px-2 py-1 bg-blue-600 text-white rounded">Привязать</button></form></div>
+ <p class="text-red-600 text-sm" x-text="err"></p><p class="text-xs text-slate-400">Парсер выбирается автоматически по хосту ссылки.</p>
+ <div class="overflow-x-auto bg-white border rounded"><table class="w-full text-xs"><thead class="bg-slate-100 text-left"><tr><th class="p-1">Заказ</th><th>Ссылка</th><th>Парсер</th><th>Статус</th><th>Последний успех</th><th>Последняя ошибка</th><th></th></tr></thead>
+ <template x-for="l in rows" :key="l.order_id"><tr class="border-t"><td class="p-1 font-semibold" x-text="l.order_id"></td><td class="max-w-[12rem] truncate" :title="l.url" x-text="l.url"></td><td x-text="l.parser_type||'—'"></td>
+  <td x-text="l.is_invalid?'сломана':(l.last_ok_at?'работает':'не проверялась')"></td><td x-text="fmt(l.last_ok_at)"></td><td><span x-text="fmt(l.last_error_at)"></span> <span class="text-red-600" x-text="l.last_error"></span> <span x-show="l.error_count" x-text="'('+l.error_count+')'"></span></td>
+  <td><button class="text-blue-600" @click="check(l.order_id)">Проверить сейчас</button></td></tr></template></table></div></div>
+{% endblock %}{% block script %}<script>function gl(){return{rows:[],state:'all',err:'',b:{order_id:'',url:''},
+ init(){this.state=new URLSearchParams(location.search).get('state')||'all';this.load()},
+ async load(){try{this.rows=await api('GET','/admin/api/gps-links?state='+this.state)}catch(e){this.err=e.message}},
+ async check(id){this.err='';try{const r=await api('POST','/admin/gps/run-now?order_id='+encodeURIComponent(id));if(!r.ok)this.err='Не удалось получить позицию для '+id;await this.load()}catch(e){this.err=e.message}},
+ async bind(){try{await api('POST','/admin/gps-links',this.b);this.b={order_id:'',url:''};this.err='';await this.load()}catch(e){this.err=e.message}}}}</script>{% endblock %}

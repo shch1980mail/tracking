@@ -1,0 +1,11 @@
+{% extends "admin/base.html" %}{% block body %}
+<div x-data="au()" x-init="load()" class="space-y-2"><div class="flex flex-wrap gap-2 text-sm">
+ <input x-model="f.action" placeholder="action (напр. import.commit)" class="border rounded px-2 py-1"><input x-model="f.user" placeholder="пользователь" class="border rounded px-2 py-1">
+ <input type="date" x-model="f.frm" class="border rounded px-2 py-1"><input type="date" x-model="f.to" class="border rounded px-2 py-1">
+ <select x-model="f.limit" class="border rounded py-1"><option>100</option><option>200</option><option>500</option></select><button class="px-3 py-1 bg-blue-600 text-white rounded" @click="load()">Показать</button></div>
+ <p class="text-red-600 text-sm" x-text="err"></p>
+ <div class="overflow-x-auto bg-white border rounded"><table class="w-full text-xs"><thead class="bg-slate-100 text-left"><tr><th class="p-1">Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead>
+ <template x-for="a in rows" :key="a.id"><tr class="border-t align-top"><td class="p-1 whitespace-nowrap" x-text="fmt(a.created_at)"></td><td x-text="a.login||'—'"></td><td x-text="a.action"></td><td x-text="a.entity+' '+(a.entity_id||'')"></td>
+  <td><details><summary class="cursor-pointer text-blue-600">payload</summary><pre class="whitespace-pre-wrap" x-text="JSON.stringify(a.payload,null,1)"></pre></details></td></tr></template></table></div></div>
+{% endblock %}{% block script %}<script>function au(){return{rows:[],err:'',f:{action:'',user:'',frm:'',to:'',limit:100},
+ async load(){const p=new URLSearchParams();for(const [k,v] of Object.entries(this.f))if(v)p.set(k,v);try{this.rows=await api('GET','/admin/audit?'+p)}catch(e){this.err=e.message}}}}</script>{% endblock %}
